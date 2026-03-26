@@ -14,6 +14,18 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 app.secret_key = 'dcop-secret-key-change-in-production'  # Change in production!
 
+# --- SNMP Imports (Add around line 15-20) ---
+try:
+    from pysnmp.hlapi.v3arch.asyncio import (
+        SnmpEngine, CommunityData, UdpTransportTarget, 
+        ContextData, ObjectType, ObjectIdentity
+    )
+    from pysnmp_sync_adapter import get_cmd_sync
+    HAS_PYSNMP = True
+except ImportError:
+    HAS_PYSNMP = False
+
+
 # In-memory storage (use database in production)
 datacenter_inventory = {}
 monitoring_data = {}
@@ -607,12 +619,10 @@ class SNMPMonitor:
         self.ip = ip
         self.community = community
         self.version = version
-        try:
-            from pysnmp.hlapi import *
-            self.snmp_client = True
-        except ImportError:
-            logger.error("pysnmp not installed")
-            self.snmp_client = False
+        # Use the global flag defined at the top of the file
+        self.snmp_client = HAS_PYSNMP
+        if not HAS_PYSNMP:
+            logger.error("pysnmp or pysnmp-sync-adapter not installed")
     
     def get_oid(self, oid):
         """Get OID value via SNMP"""
@@ -620,36 +630,26 @@ class SNMPMonitor:
             return None
         
         try:
-            from pysnmp.hlapi import *
+            # Map version: SNMPv1 is mpModel=0, SNMPv2c is mpModel=1
+            mp_model = 0 if self.version == 1 else 1
             
-            errorIndication, errorStatus, errorIndex, varBinds = next(
-                getCmd(SnmpEngine(),
-                       CommunityData(self.community),
-                       UdpTransportTarget((self.ip, 161)),
-                       ContextData(),
-                       ObjectType(ObjectIdentity(oid)),
-                       maxRepetitions=5)
+            # The sync adapter handles the asyncio loop for you
+            error_indication, error_status, error_index, var_binds = get_cmd_sync(
+                SnmpEngine(),
+                CommunityData(self.community, mpModel=mp_model),
+                UdpTransportTarget((self.ip, 161)),
+                ContextData(),
+                ObjectType(ObjectIdentity(oid))
             )
-            
-            if errorIndication:
-                logger.error(f"SNMP Error for {self.ip}: {errorIndication}")
+
+            if error_indication or error_status:
                 return None
-            
-            result = {}
-            for varBind in varBinds:
-                obj_id = str(varBind[0])
-                value = str(varBind[1])
+
+            for name, val in var_binds:
+                return str(val)
                 
-                # Parse specific OIDs
-                if 'temperature' in oid.lower() or '.1.3.6.1.4.1.2021.13.16.' in oid:
-                    result['temperature_celsius'] = float(value)
-                elif 'fan' in oid.lower():
-                    result['fan_rpm'] = int(value)
-                
-            return result
-            
         except Exception as e:
-            logger.error(f"SNMP error for {self.ip}: {e}")
+            logger.error(f"SNMP Error for {self.ip}: {e}")
             return None
 
 class TrueNASStorage(DataCenterDevice):
