@@ -1,0 +1,761 @@
+{% extends "base.html" %}
+
+{% block title %}Data Center Operations Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="mb-3">Data Center Operations & Monitoring</h2>
+            <p class="text-muted">Monitor Dell iDRAC, Cisco Nexus/3750X/Routers, TrueNAS/Open-E Storage, and more.</p>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4" id="statsRow" style="display: none;">
+        <div class="col-md-3 mb-3">
+            <div class="card stat-card bg-primary text-white h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Devices Monitored</h5>
+                    <p class="display-4" id="deviceCount">-</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stat-card bg-success text-white h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Online</h5>
+                    <p class="display-4" id="onlineCount">-</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stat-card bg-warning text-white h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Critical Alerts</h5>
+                    <p class="display-4" id="alertCount">-</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stat-card bg-danger text-white h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Storage Capacity</h5>
+                    <p class="display-4" id="storageUsage">-</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Device Form -->
+    <div class="row mb-4">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">Add New Device to Inventory</div>
+                <div class="card-body">
+                    <form id="addDeviceForm">
+                        <div class="mb-3">
+                            <label for="name" class="form-label">Device Name *</label>
+                            <input type="text" class="form-control" id="name" required 
+                                   placeholder="e.g., Main Switch, Storage Array 1">
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="ip" class="form-label">IP Address / Hostname *</label>
+                                <input type="text" class="form-control" id="ip" required 
+                                       placeholder="e.g., 192.168.1.1">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="device_type" class="form-label">Device Type *</label>
+                                <select class="form-select" id="device_type" required>
+                                    <option value="">Select device type...</option>
+                                    <option value="dell_idrac">Dell iDRAC (Server Management)</option>
+                                    <option value="cisco_nexus">Cisco Nexus Switch (100Gbps)</option>
+                                    <option value="cisco_3750x">Cisco 3750X Switch</option>
+                                    <option value="cisco_router">Cisco Router</option>
+                                    <option value="truenas">TrueNAS Storage</option>
+                                    <option value="open_e_dss">Open-E JovianDSS Storage</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="username" class="form-label">Username *</label>
+                                <input type="text" class="form-control" id="username" required 
+                                       placeholder="admin or root">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="password" class="form-label">Password *</label>
+                                <input type="password" class="form-control" id="password" required 
+                                       placeholder="Enter password">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">
+                            🔗 Connect to Device
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Connected Devices List -->
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>Connected Devices</span>
+                    <button class="btn btn-sm btn-outline-primary" onclick="refreshDeviceList()">
+                        🔄 Refresh
+                    </button>
+                </div>
+                <div class="table-container">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="devicesTableBody">
+                            <!-- Devices will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Display Section (Hidden by default) -->
+    <div class="row" id="dataSection" style="display: none;">
+        <div class="col-12 mb-3">
+            <button class="btn btn-outline-secondary" onclick="hideDataSection()">← Back to Dashboard</button>
+            <span class="ms-3 fw-bold" id="currentDeviceLabel"></span>
+        </div>
+
+        <!-- Tabs for different data types -->
+        <ul class="nav nav-tabs" id="dataTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="system-tab" data-bs-toggle="tab" 
+                        data-bs-target="#system-pane" type="button" onclick="loadSystemInfo()">🖥️ System Info</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="hardware-tab" data-bs-toggle="tab" 
+                        data-bs-target="#hardware-pane" type="button" onclick="loadHardwareStatus()">⚙️ Hardware</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="interface-tab" data-bs-toggle="tab" 
+                        data-bs-target="#interface-pane" type="button" onclick="loadInterfaceStatus()">🔌 Interfaces</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="storage-tab" data-bs-toggle="tab" 
+                        data-bs-target="#storage-pane" type="button" onclick="loadStorageStatus()">💾 Storage</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="disks-tab" data-bs-toggle="tab" 
+                        data-bs-target="#disks-pane" type="button" onclick="loadDiskStatus()">💿 RAID/Disk</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="routing-tab" data-bs-toggle="tab" 
+                        data-bs-target="#routing-pane" type="button" onclick="loadRoutingInfo()">🔄 Routing</button>
+            </li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content mt-3">
+            <div class="tab-pane fade show active" id="system-pane">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>System Information</span>
+                        <button class="btn btn-sm btn-success" onclick="downloadCSV('system')">
+                            ⬇️ Download CSV
+                        </button>
+                    </div>
+                    <div class="card-body p-3">
+                        <div id="systemInfoContent">Loading...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="hardware-pane">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Hardware Health Status</span>
+                        <button class="btn btn-sm btn-success" onclick="downloadCSV('hardware')">
+                            ⬇️ Download CSV
+                        </button>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <h5>Temperature Sensors</h5>
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr><th>Sensor</th><th>Status</th><th>Celsius (°C)</th></tr>
+                                </thead>
+                                <tbody id="tempTableBody">Loading...</tbody>
+                            </table>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <h5>Fan Speeds</h5>
+                            <table class="table table-sm">
+                                <thead><tr><th>Fan</th><th>Status</th><th>RPM</th></tr>
+                                </thead>
+                                <tbody id="fanTableBody">Loading...</tbody>
+                            </table>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <h5>Power Supplies</h5>
+                            <table class="table table-sm">
+                                <thead><tr><th>PSU</th><th>Status</th><th>Watts</th></tr>
+                                </thead>
+                                <tbody id="psuTableBody">Loading...</tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="interface-pane">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Interface Status & Statistics</span>
+                        <button class="btn btn-sm btn-success" onclick="downloadCSV('interfaces')">
+                            ⬇️ Download CSV
+                        </button>
+                    </div>
+                    <div class="table-container p-3">
+                        <table class="table table-striped mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Interface</th><th>IP Address</th><th>Status</th><th>Speed</th><th>RX Bytes</th><th>TX Bytes</th>
+                                </tr>
+                            </thead>
+                            <tbody id="interfaceTableBody">Loading...</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="storage-pane">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Storage System Status</span>
+                        <button class="btn btn-sm btn-success" onclick="downloadCSV('storage')">
+                            ⬇️ Download CSV
+                        </button>
+                    </div>
+                    <div class="table-container p-3">
+                        <table class="table table-striped mb-0">
+                            <thead>
+                                <tr><th>Type</th><th>Name</th><th>Status</th><th>Size</th></tr>
+                            </thead>
+                            <tbody id="storageTableBody">Loading...</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="disks-pane">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>RAID Controller & Disk Status</span>
+                        <button class="btn btn-sm btn-success" onclick="downloadCSV('disks')">
+                            ⬇️ Download CSV
+                        </button>
+                    </div>
+                    <div class="table-container p-3">
+                        <table class="table table-striped mb-0">
+                            <thead>
+                                <tr><th>Type</th><th>Name</th><th>Status</th><th>Capacity (GB)</th></tr>
+                            </thead>
+                            <tbody id="diskTableBody">Loading...</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="routing-pane">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Routing Table Information</span>
+                        <button class="btn btn-sm btn-success" onclick="downloadCSV('routing')">
+                            ⬇️ Download CSV
+                        </button>
+                    </div>
+                    <div class="table-container p-3">
+                        <table class="table table-striped mb-0">
+                            <thead>
+                                <tr><th>Network</th><th>Gateway</th><th>Type</th></tr>
+                            </thead>
+                            <tbody id="routingTableBody">Loading...</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Help Section -->
+        <div class="card mt-4 bg-light">
+            <div class="card-header">📚 Quick Help</div>
+            <div class="card-body">
+                <p><strong>To add a device:</strong> Fill in the form above with your device details and click "Connect".</p>
+                <p><strong>To view data:</strong> Click the "View" button next to any connected device.</p>
+                <p><strong>Monitoring capabilities:</strong></p>
+                <ul>
+                    <li><strong>Dell iDRAC:</strong> System info, hardware health (temp/fans/power), RAID/disk status</li>
+                    <li><strong>Cisco Nexus/3750X/Routers:</strong> Interface stats, routing tables, system uptime</li>
+                    <li><strong>TrueNAS/Open-E Storage:</strong> Pool/volume status, capacity monitoring</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentDeviceIP = null;
+
+    // Show/hide loading spinner
+    function showLoading() { document.getElementById('loadingSpinner').classList.add('active'); }
+    function hideLoading() { document.getElementById('loadingSpinner').classList.remove('active'); }
+
+    // Add device form submission
+    document.getElementById('addDeviceForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const data = {
+            name: document.getElementById('name').value,
+            ip: document.getElementById('ip').value,
+            device_type: document.getElementById('device_type').value,
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value
+        };
+
+        showLoading();
+        try {
+            const response = await fetch('/api/add-device', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            
+            if (response.ok) {
+                alert('Device connected successfully!');
+                document.getElementById('addDeviceForm').reset();
+                refreshDeviceList();
+            } else {
+                const error = await response.json();
+                alert(`Error: ${error.error}`);
+            }
+        } catch (err) {
+            alert(`Connection failed: ${err.message}`);
+        } finally {
+            hideLoading();
+        }
+    });
+
+    // Refresh device list
+    async function refreshDeviceList() {
+        showLoading();
+        try {
+            const response = await fetch('/api/devices');
+            if (response.ok) {
+                const data = await response.json();
+                renderDevices(data.devices);
+            }
+        } catch (err) {
+            console.error('Error:', err);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Render devices table
+    function renderDevices(devices) {
+        const tbody = document.getElementById('devicesTableBody');
+        
+        if (devices.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No connected devices</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = devices.map(device => `
+            <tr>
+                <td>${device.name}</td>
+                <td>${device.type.replace('_', ' ').toUpperCase()}</td>
+                <td><span class="status-badge ${device.status === 'connected' ? 'status-ok' : 'status-down'}">${device.status}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="selectDevice('${device.ip}')">👁️ View</button>
+                    <button class="btn btn-sm btn-danger" onclick="disconnectDevice('${device.ip}')">❌ Disconnect</button>
+                </td>
+            </tr>
+        `).join('');
+
+        // Update stats
+        document.getElementById('statsRow').style.display = 'block';
+        document.getElementById('deviceCount').textContent = devices.length;
+        
+        const online = devices.filter(d => d.status === 'connected').length;
+        document.getElementById('onlineCount').textContent = online;
+    }
+
+    // Select device to view data
+    function selectDevice(ip) {
+        currentDeviceIP = ip;
+        document.getElementById('dataSection').style.display = 'block';
+        
+        const device = Array.from(document.querySelectorAll('#devicesTableBody tr'))
+            .find(row => row.querySelector('td:nth-child(1)').textContent.includes(currentDeviceIP));
+        
+        if (device) {
+            const name = device.querySelector('td:nth-child(1)').textContent;
+            document.getElementById('currentDeviceLabel').textContent = `Monitoring: ${name} (${ip})`;
+        }
+        
+        // Load system info by default
+        loadSystemInfo();
+    }
+
+    // Hide data section
+    function hideDataSection() {
+        currentDeviceIP = null;
+        document.getElementById('dataSection').style.display = 'none';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // Load system info
+    async function loadSystemInfo() {
+        showLoading();
+        try {
+            const response = await fetch(`/api/${currentDeviceIP}/system-info`);
+            if (response.ok) {
+                const data = await response.json();
+                renderSystemInfo(data);
+            } else {
+                document.getElementById('systemInfoContent').innerHTML = '<div class="alert alert-danger">Failed to load system information</div>';
+            }
+        } catch (err) {
+            document.getElementById('systemInfoContent').innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Render system info
+    function renderSystemInfo(data) {
+        if (data.error) {
+            document.getElementById('systemInfoContent').innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+            return;
+        }
+
+        const html = `
+            <table class="table table-sm">
+                ${Object.entries(data).map(([key, value]) => 
+                    key !== 'error' ? `<tr><th>${key.replace(/_/g, ' ').toUpperCase()}</th><td>${value || '-'}</td></tr>` : ''
+                ).join('')}
+            </table>
+        `;
+        
+        document.getElementById('systemInfoContent').innerHTML = html;
+    }
+
+    // Load hardware status
+    async function loadHardwareStatus() {
+        showLoading();
+        try {
+            const response = await fetch(`/api/${currentDeviceIP}/hardware-status`);
+            if (response.ok) {
+                const data = await response.json();
+                renderHardwareStatus(data);
+            } else {
+                document.getElementById('tempTableBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Failed to load hardware status</td></tr>';
+                document.getElementById('fanTableBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Failed to load hardware status</td></tr>';
+                document.getElementById('psuTableBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Failed to load hardware status</td></tr>';
+            }
+        } catch (err) {
+            document.getElementById('tempTableBody').innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error: ${err.message}</td></tr>`;
+            document.getElementById('fanTableBody').innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error: ${err.message}</td></tr>`;
+            document.getElementById('psuTableBody').innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error: ${err.message}</td></tr>`;
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Render hardware status
+    function renderHardwareStatus(data) {
+        if (data.error) return;
+
+        const tempBody = document.getElementById('tempTableBody');
+        const fanBody = document.getElementById('fanTableBody');
+        const psuBody = document.getElementById('psuTableBody');
+        
+        if (!data.temperatures || data.temperatures.length === 0) {
+            tempBody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No sensors found</td></tr>';
+        } else {
+            tempBody.innerHTML = data.temperatures.map(temp => `
+                <tr>
+                    <td>${temp.name}</td>
+                    <td><span class="badge ${getStatusBadge(temp.status)}">${temp.status}</span></td>
+                    <td>${temp.reading_celsius}°C</td>
+                </tr>
+            `).join('');
+        }
+
+        if (!data.fans || data.fans.length === 0) {
+            fanBody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No fans found</td></tr>';
+        } else {
+            fanBody.innerHTML = data.fans.map(fan => `
+                <tr>
+                    <td>${fan.name}</td>
+                    <td><span class="badge ${getStatusBadge(fan.status)}">${fan.status}</span></td>
+                    <td>${fan.reading_rpm} RPM</td>
+                </tr>
+            `).join('');
+        }
+
+        if (!data.power_supplies || data.power_supplies.length === 0) {
+            psuBody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No power supplies found</td></tr>';
+        } else {
+            psuBody.innerHTML = data.power_supplies.map(psu => `
+                <tr>
+                    <td>${psu.name}</td>
+                    <td><span class="badge ${getStatusBadge(psu.status)}">${psu.status}</span></td>
+                    <td>${psu.power_consumed_watts}W</td>
+                </tr>
+            `).join('');
+        }
+    }
+
+    // Load interface status
+    async function loadInterfaceStatus() {
+        showLoading();
+        try {
+            const response = await fetch(`/api/${currentDeviceIP}/interface-status`);
+            if (response.ok) {
+                const data = await response.json();
+                renderInterfaceStatus(data);
+            } else {
+                document.getElementById('interfaceTableBody').innerHTML = '<tr><td colspan="6" class="text-center text-danger">Failed to load interface status</td></tr>';
+            }
+        } catch (err) {
+            document.getElementById('interfaceTableBody').innerHTML = `<tr><td colspan="6" class="text-center text-danger">Error: ${err.message}</td></tr>`;
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Render interface status
+    function renderInterfaceStatus(data) {
+        const tbody = document.getElementById('interfaceTableBody');
+        
+        if (!data.interfaces || data.interfaces.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No interfaces found</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.interfaces.map(iface => `
+            <tr>
+                <td>${iface.interface}</td>
+                <td>${iface.ip_address || '-'}</td>
+                <td><span class="badge ${getStatusBadge(iface.status)}">${iface.status}</span></td>
+                <td><strong>${iface.speed || 'Unknown'}</strong></td>
+                <td>${formatBytes(iface.rx_bytes)}</td>
+                <td>${formatBytes(iface.tx_bytes)}</td>
+            </tr>
+        `).join('');
+    }
+
+    // Load storage status
+    async function loadStorageStatus() {
+        showLoading();
+        try {
+            const response = await fetch(`/api/${currentDeviceIP}/storage-status`);
+            if (response.ok) {
+                const data = await response.json();
+                renderStorageStatus(data);
+            } else {
+                document.getElementById('storageTableBody').innerHTML = '<tr><td colspan="4" class="text-center text-danger">Failed to load storage status</td></tr>';
+            }
+        } catch (err) {
+            document.getElementById('storageTableBody').innerHTML = `<tr><td colspan="4" class="text-center text-danger">Error: ${err.message}</td></tr>`;
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Render storage status
+    function renderStorageStatus(data) {
+        const tbody = document.getElementById('storageTableBody');
+        
+        if (!data.pools && !data.volumes) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No storage information found</td></tr>';
+            return;
+        }
+
+        let rows = [];
+        
+        if (data.pools) {
+            rows = data.pools.map(pool => `
+                <tr>
+                    <td>ZFS Pool</td>
+                    <td>${pool.name}</td>
+                    <td><span class="badge ${getStatusBadge(pool.status)}">${pool.status}</span></td>
+                    <td>${pool.size_tb}TB</td>
+                </tr>
+            `);
+        } else if (data.volumes) {
+            rows = data.volumes.map(vol => `
+                <tr>
+                    <td>Volume</td>
+                    <td>${vol.name}</td>
+                    <td><span class="badge ${getStatusBadge(vol.status)}">${vol.status}</span></td>
+                    <td>${vol.size_gb}GB</td>
+                </tr>
+            `);
+        }
+
+        tbody.innerHTML = rows.length > 0 ? rows.join('') : '<tr><td colspan="4" class="text-center text-muted">No storage data available</td></tr>';
+    }
+
+    // Load disk status
+    async function loadDiskStatus() {
+        showLoading();
+        try {
+            const response = await fetch(`/api/${currentDeviceIP}/disks`);
+            if (response.ok) {
+                const data = await response.json();
+                renderDiskStatus(data);
+            } else {
+                document.getElementById('diskTableBody').innerHTML = '<tr><td colspan="4" class="text-center text-danger">Failed to load disk status</td></tr>';
+            }
+        } catch (err) {
+            document.getElementById('diskTableBody').innerHTML = `<tr><td colspan="4" class="text-center text-danger">Error: ${err.message}</td></tr>`;
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Render disk status
+    function renderDiskStatus(data) {
+        const tbody = document.getElementById('diskTableBody');
+        
+        if (!data || (Array.isArray(data) && data.length === 0)) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No disk information found</td></tr>';
+            return;
+        }
+
+        let rows = [];
+        
+        if (Array.isArray(data)) {
+            rows = data.map(disk => `
+                <tr>
+                    <td>${disk.type}</td>
+                    <td>${disk.name}</td>
+                    <td><span class="badge ${getStatusBadge(disk.status)}">${disk.status}</span></td>
+                    <td>${disk.capacity_gb} GB</td>
+                </tr>
+            `);
+        } else if (data.error) {
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">${data.error}</td></tr>`;
+        }
+
+        tbody.innerHTML = rows.length > 0 ? rows.join('') : '<tr><td colspan="4" class="text-center text-muted">No disk data available</td></tr>';
+    }
+
+    // Load routing info
+    async function loadRoutingInfo() {
+        showLoading();
+        try {
+            const response = await fetch(`/api/${currentDeviceIP}/routing-info`);
+            if (response.ok) {
+                const data = await response.json();
+                renderRoutingInfo(data);
+            } else {
+                document.getElementById('routingTableBody').innerHTML = '<tr><td colspan="3" class="text-center text-danger">Failed to load routing info</td></tr>';
+            }
+        } catch (err) {
+            document.getElementById('routingTableBody').innerHTML = `<tr><td colspan="3" class="text-center text-danger">Error: ${err.message}</td></tr>`;
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Render routing info
+    function renderRoutingInfo(data) {
+        const tbody = document.getElementById('routingTableBody');
+        
+        if (!data.routes || data.routes.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No routes found</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.routes.map(route => `
+            <tr>
+                <td>${route.network}</td>
+                <td>${route.gateway}</td>
+                <td>${route.type}</td>
+            </tr>
+        `).join('');
+    }
+
+    // Disconnect device
+    async function disconnectDevice(ip) {
+        if (!confirm(`Disconnect from ${ip}?`)) return;
+        
+        showLoading();
+        try {
+            const response = await fetch(`/api/${ip}/disconnect`, { method: 'POST' });
+            if (response.ok) {
+                alert('Disconnected successfully');
+                refreshDeviceList();
+            } else {
+                const error = await response.json();
+                alert(`Error: ${error.error}`);
+            }
+        } catch (err) {
+            alert(`Connection failed: ${err.message}`);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // Download CSV function
+    async function downloadCSV(type) {
+        let endpoint = '';
+        
+        switch(type) {
+            case 'system': window.location.href = `/api/${currentDeviceIP}/system-info`; break;
+            case 'hardware': window.location.href = `/api/${currentDeviceIP}/hardware-status`; break;
+            case 'interfaces': window.location.href = `/api/${currentDeviceIP}/interface-status`; break;
+            case 'storage': window.location.href = `/api/${currentDeviceIP}/storage-status`; break;
+            case 'disks': window.location.href = `/api/${currentDeviceIP}/disks`; break;
+            case 'routing': window.location.href = `/api/${currentDeviceIP}/routing-info`; break;
+        }
+    }
+
+    // Helper functions
+    function getStatusBadge(status) {
+        if (status === 'ONLINE' || status === 'up' || status === 'Established' || 
+            status === 'OK' || status === 'Enabled') return 'bg-success';
+        if (status === 'DEGRADED' || status === 'down' || status === 'Warning' || 
+            status === 'Degraded') return 'bg-warning text-dark';
+        if (status === 'FAILED' || status === 'Critical' || status === 'Failed') return 'bg-danger';
+        return 'bg-secondary';
+    }
+
+    function formatBytes(bytes) {
+        if (bytes === 0 || !bytes) return '0 B';
+        
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Initial load - refresh device list
+    refreshDeviceList();
+</script>
+{% endblock %}
